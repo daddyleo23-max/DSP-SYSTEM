@@ -134,12 +134,14 @@ class Dashboard(QMainWindow):
         btn_asistencias = QPushButton("🕒 Consultar Asistencias")
         btn_notas = QPushButton("📝 Notas de Curso")
         btn_historial = QPushButton("⏳ Historial")
+        btn_exportar = QPushButton("📄 Exportar Archivo")
 
         btn_clases.clicked.connect(self.show_clases_dialog)
         btn_alumnos.clicked.connect(self.show_registro_alumnos_dialog)
         btn_asistencias.clicked.connect(self.show_consulta_alumnos_dialog)
         btn_historial.clicked.connect(self.show_historial_dialog)
         btn_notas.clicked.connect(lambda: QMessageBox.information(self, "En desarrollo", "Próximamente"))
+        btn_exportar.clicked.connect(self.show_exportar_dialog)
 
         # Estilo de botones del menú
         menu_btn_style = """
@@ -154,7 +156,7 @@ class Dashboard(QMainWindow):
                 background-color: #4C566A;
             }
         """
-        for btn in [btn_clases, btn_alumnos, btn_asistencias, btn_notas, btn_historial]:
+        for btn in [btn_clases, btn_alumnos, btn_asistencias, btn_notas, btn_historial, btn_exportar]:
             btn.setStyleSheet(menu_btn_style)
             left_layout.addWidget(btn)
 
@@ -646,7 +648,7 @@ class Dashboard(QMainWindow):
     def generar_numero_control(self):
         anio_actual = datetime.now().year % 100  # Últimos 2 dígitos (ej: 23 para 2023)
         while True:
-            numero = randint(1000, 9999)  # 4 dígitos aleatorios
+            numero = randint(1000, 999999)  # 4 dígitos aleatorios
             numero_control = f"{anio_actual}{numero:04d}"  # Formato: 230001
         
         # Verificar que no exista en ningún grupo
@@ -847,6 +849,68 @@ class Dashboard(QMainWindow):
         btn_registro_manual.clicked.connect(self.registrar_llegada_manual)
         self.barra_clase_layout.addWidget(btn_registro_manual, alignment=Qt.AlignmentFlag.AlignCenter)
 
+    #=====================================METODO DE EXPORTACION===========================================================
+    def show_exportar_dialog(self):
+        """Muestra el diálogo para exportar datos a PDF."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Exportar a PDF")
+        dialog.setModal(True)
+        dialog_layout = QVBoxLayout(dialog)
+    
+    # Formulario para seleccionar qué exportar
+        form = QFormLayout()
+    
+    # Combo para seleccionar el tipo de reporte
+        self.combo_tipo_reporte = QComboBox()
+        self.combo_tipo_reporte.addItems([
+            "Lista de alumnos por grupo",
+            "Asistencias por clase",
+            "Historial completo de clases"
+        ])
+        form.addRow("Tipo de reporte:", self.combo_tipo_reporte)
+    
+    # Combo para filtrar por materia/grupo si es necesario
+        self.combo_filtro = QComboBox()
+        self.combo_filtro.addItems(sum([[f"{materia} - {grupo}" 
+                                    for grupo in grupos] 
+                                    for materia, grupos in self.materias.items()], []))
+        form.addRow("Filtrar por:", self.combo_filtro)
+    
+        dialog_layout.addLayout(form)
+    
+    # Botones de acción
+        btn_container = QWidget()
+        btn_layout = QHBoxLayout(btn_container)
+    
+        btn_exportar_pdf = QPushButton("Exportar PDF")
+        btn_exportar_pdf.setObjectName("success")
+        btn_exportar_pdf.clicked.connect(lambda: self.exportar_a_pdf(dialog))
+    
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.clicked.connect(dialog.close)
+    
+        btn_layout.addWidget(btn_exportar_pdf)
+        btn_layout.addWidget(btn_cancelar)
+    
+        dialog_layout.addWidget(btn_container)
+        dialog.exec()
+
+    def exportar_a_pdf(self, dialog):
+        """Exporta los datos seleccionados a un archivo PDF."""
+        tipo_reporte = self.combo_tipo_reporte.currentText()
+        filtro = self.combo_filtro.currentText()
+    
+        QMessageBox.information(
+            self, 
+            "Exportación pendiente", 
+            f"La función para exportar {tipo_reporte} a PDF será implementada próximamente.\n\n"
+            f"Filtro seleccionado: {filtro}"
+        )
+    
+    # Aquí irá el código que tu compañero desarrollará para la exportación a PDF
+    
+        dialog.close()
+
     # ===================== MÉTODOS DE SIMULACIÓN =====================
     def simular_llegadas_alumnos(self, grupo):
         """Inicia la simulación de llegadas de alumnos"""
@@ -951,14 +1015,6 @@ class Dashboard(QMainWindow):
         lbl_resumen.setStyleSheet("font-size: 16px; font-weight: bold;")
         dialog_layout.addWidget(lbl_resumen)
 
-        # Botones de exportación
-        btn_export_pdf = QPushButton("Exportar a PDF")
-        btn_export_pdf.clicked.connect(lambda: self.exportar_asistencia_pdf(materia, grupo))
-        dialog_layout.addWidget(btn_export_pdf)
-
-        btn_export_excel = QPushButton("Exportar a Excel")
-        btn_export_excel.clicked.connect(lambda: self.exportar_asistencia_excel(materia, grupo))
-        dialog_layout.addWidget(btn_export_excel)
 
         # Botón para cerrar
         btn_cerrar = QPushButton("Cerrar")
@@ -968,62 +1024,7 @@ class Dashboard(QMainWindow):
         dialog.setLayout(dialog_layout)
         dialog.exec()
 
-    def exportar_asistencia_pdf(self, materia, grupo):
-        """Exporta la asistencia a un archivo PDF"""
-        from fpdf import FPDF
-
-        filename = f"asistencia_{materia}_{grupo}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-
-    # Título
-        pdf.cell(200, 10, txt=f"Asistencia - {materia} - {grupo}", ln=True, align='C')
-        pdf.ln(10)
-
-    # Tabla de asistencia
-        pdf.set_font("Arial", size=10)
-        pdf.cell(20, 10, "No.", border=1)
-        pdf.cell(60, 10, "Nombre", border=1)
-        pdf.cell(40, 10, "# de control", border=1)
-        pdf.cell(40, 10, "Hora Llegada", border=1)
-        pdf.cell(30, 10, "Estado", border=1)
-        pdf.ln()
-
-        for row in range(self.tabla_asistencia.rowCount()):
-            pdf.cell(20, 10, self.tabla_asistencia.item(row, 0).text(), border=1)
-            pdf.cell(60, 10, self.tabla_asistencia.item(row, 1).text(), border=1)
-            pdf.cell(40, 10, self.tabla_asistencia.item(row, 2).text(), border=1)
-            pdf.cell(40, 10, self.tabla_asistencia.item(row, 3).text(), border=1)
-            pdf.cell(30, 10, self.tabla_asistencia.item(row, 4).text(), border=1)
-            pdf.ln()
-
-        pdf.output(filename)
-        QMessageBox.information(self, "Exportación Exitosa", f"Archivo PDF exportado como {filename}")
-
-    def exportar_asistencia_excel(self, materia, grupo):
-        """Exporta la asistencia a un archivo Excel"""
-        import xlsxwriter
-
-        filename = f"asistencia_{materia}_{grupo}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-        workbook = xlsxwriter.Workbook(filename)
-        worksheet = workbook.add_worksheet()
-
-    # Encabezados
-        headers = ["No.", "Nombre", "# de Control", "Hora Llegada", "Estado"]
-        for col, header in enumerate(headers):
-            worksheet.write(0, col, header)
-
-    # Datos
-        for row in range(self.tabla_asistencia.rowCount()):
-            worksheet.write(row + 1, 0, self.tabla_asistencia.item(row, 0).text())
-            worksheet.write(row + 1, 1, self.tabla_asistencia.item(row, 1).text())
-            worksheet.write(row + 1, 2, self.tabla_asistencia.item(row, 2).text())
-            worksheet.write(row + 1, 3, self.tabla_asistencia.item(row, 3).text())
-            worksheet.write(row + 1, 4, self.tabla_asistencia.item(row, 4).text())
-
-        workbook.close()
-        QMessageBox.information(self, "Exportación Exitosa", f"Archivo Excel exportado como {filename}")
+    
 
     # ===================== MÉTODOS COMPLEMENTARIOS =====================
     def actualizar_reloj(self):
