@@ -1,0 +1,37 @@
+[
+    {
+        "clase": "Funciones Avanzadas de Software - Grupo B",
+        "fecha_inicio": "2025-01-27",
+        "fecha_fin": "2025-06-06",
+        "dias": [
+            "Lunes",
+            "Miércoles",
+            "Viernes"
+        ],
+        "hora_inicio": "07:00",
+        "hora_fin": "09:00"
+    },
+    {
+        "clase": "Gestion de Software - Grupo J",
+        "fecha_inicio": "2025-01-27",
+        "fecha_fin": "2025-06-06",
+        "dias": [
+            "Martes",
+            "Jueves",
+            "Viernes"
+        ],
+        "hora_inicio": "07:00",
+        "hora_fin": "09:00"
+    },
+    {
+        "clase": "Ecuaciones Diferenciales - Grupo B",
+        "fecha_inicio": "2025-01-27",
+        "fecha_fin": "2025-06-06",
+        "dias": [
+            "Lunes",
+            "Miércoles"
+        ],
+        "hora_inicio": "11:00",
+        "hora_fin": "13:00"
+    }
+]

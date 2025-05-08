@@ -1,0 +1,18 @@
+[
+    {
+        "materia": "Telecomunicaciones",
+        "grupo": "Grupo A"
+    },
+    {
+        "materia": "Gestion de Software",
+        "grupo": "Grupo J"
+    },
+    {
+        "materia": "Funciones Avanzadas de Software",
+        "grupo": "Grupo B"
+    },
+    {
+        "materia": "Ecuaciones Diferenciales",
+        "grupo": "Grupo B"
+    }
+]

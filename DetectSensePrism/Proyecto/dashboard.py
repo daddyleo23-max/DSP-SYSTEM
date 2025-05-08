@@ -2,12 +2,17 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
     QHBoxLayout, QListWidget, QComboBox, QMessageBox,
     QLineEdit, QDialog, QSpinBox, QTableWidget, QTableWidgetItem,
-    QTabWidget, QFormLayout, QHeaderView, QGroupBox, QFrame, QStackedWidget
+    QTabWidget, QFormLayout, QHeaderView, QGroupBox, QFrame, QStackedWidget, QFileDialog, QCheckBox, QTimeEdit
 )
-from PyQt6.QtCore import Qt, QTimer, QDateTime
+import json
+from PyQt6.QtCore import Qt, QTimer, QDateTime, QTime
 from PyQt6.QtGui import QColor
 from datetime import datetime, timedelta
 from random import randint, choice
+
+from pdf_reader import extraer_datos_pdf
+from database import insertar_datos_pdf
+
 
 class Dashboard(QMainWindow):
     def __init__(self, user_type):
@@ -16,6 +21,8 @@ class Dashboard(QMainWindow):
         self.clase_activa = False
         self.hora_inicio_clase = None
         self.current_dialog = None
+
+        
         
         # Datos de ejemplo
         self.materias = {
@@ -106,6 +113,23 @@ class Dashboard(QMainWindow):
                 padding: 0 5px;
             }
         """)
+
+        self.materias = {}  # Inicializar el diccionario de materias
+        self.cargar_clases()  # Cargar las clases desde el archivo JSON
+
+    # Configuración de la interfaz
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        
+
+        
+        
+
+    # Configurar el menú y otras secciones...
         
 
         # ===================== WIDGET CENTRAL =====================
@@ -130,18 +154,24 @@ class Dashboard(QMainWindow):
 
         # Botones del menú (conectados a tus métodos originales)
         btn_clases = QPushButton("📚 Gestionar Clases")
+        btn_programar = QPushButton("📅 Programar Clases")
         btn_alumnos = QPushButton("👥 Registrar Alumnos")
-        btn_asistencias = QPushButton("🕒 Consultar Asistencias")
-        btn_notas = QPushButton("📝 Notas de Curso")
-        btn_historial = QPushButton("⏳ Historial")
         btn_exportar = QPushButton("📄 Exportar Archivo")
+        btn_historial = QPushButton("⏳ Historial")
+        btn_asistencias = QPushButton("🕒 Consultar Alumnos")
+        btn_notas = QPushButton("📝 Notas de Curso")
+        
+        
+        
 
         btn_clases.clicked.connect(self.show_clases_dialog)
+        btn_programar.clicked.connect(self.show_programar_clases_dialog)
         btn_alumnos.clicked.connect(self.show_registro_alumnos_dialog)
         btn_asistencias.clicked.connect(self.show_consulta_alumnos_dialog)
         btn_historial.clicked.connect(self.show_historial_dialog)
         btn_notas.clicked.connect(lambda: QMessageBox.information(self, "En desarrollo", "Próximamente"))
         btn_exportar.clicked.connect(self.show_exportar_dialog)
+        
 
         # Estilo de botones del menú
         menu_btn_style = """
@@ -156,7 +186,7 @@ class Dashboard(QMainWindow):
                 background-color: #4C566A;
             }
         """
-        for btn in [btn_clases, btn_alumnos, btn_asistencias, btn_notas, btn_historial, btn_exportar]:
+        for btn in [btn_clases, btn_alumnos, btn_asistencias, btn_notas, btn_historial, btn_exportar, btn_programar]:
             btn.setStyleSheet(menu_btn_style)
             left_layout.addWidget(btn)
 
@@ -186,48 +216,87 @@ class Dashboard(QMainWindow):
         self.content_stack.addWidget(self.empty_content)
 
         # --------------------- SECCIÓN DE RECORDATORIOS ---------------------
+        # --------------------- SECCIÓN DE RECORDATORIOS ---------------------
         reminder_box = QGroupBox("📌 Recordatorios")
         reminder_layout = QVBoxLayout()
-        
-        # Ejemplo dinámico (usando tus datos)
-        lbl_aula = QLabel(f"📍 Aula asignada: {self.aulas.get('Matemáticas - Grupo D', 'No asignada')}")
-        lbl_prox_clase = QLabel("⏰ Próxima clase: Matemáticas - Grupo D (18:45)")
-        lbl_urgente = QLabel("⚠️ Reunión de profesores mañana a las 10:00 AM")
-        
-        for widget in [lbl_aula, lbl_prox_clase, lbl_urgente]:
-            widget.setStyleSheet("font-size: 14px; font-weight: normal; padding: 3px 0;")
-            reminder_layout.addWidget(widget)
-        
+
+# Cargar clases programadas
+        clases_programadas = self.cargar_programaciones()
+        if clases_programadas:
+            for clase in clases_programadas:
+                nombre = clase.get("clase", "Sin nombre")
+                fecha_inicio = clase.get("fecha_inicio", "¿?")
+                fecha_fin = clase.get("fecha_fin", "¿?")
+                dias = ", ".join(clase.get("dias", []))
+                hora_inicio = clase.get("hora_inicio", "")
+                hora_fin = clase.get("hora_fin", "")
+                texto = (f"📚 {nombre}\n"
+                         f"🗓️ {fecha_inicio} a {fecha_fin}\n"
+                         f"🕒 {dias} {hora_inicio}-{hora_fin}")
+
+    # Widget contenedor horizontal
+                recordatorio_widget = QWidget()
+                recordatorio_layout = QHBoxLayout(recordatorio_widget)
+                recordatorio_layout.setContentsMargins(0, 0, 0, 0)
+
+                lbl = QLabel(texto)
+                lbl.setStyleSheet("font-size: 14px; font-weight: normal; padding: 3px 0;")
+                btn_iniciar = QPushButton("Iniciar Clase")
+                btn_iniciar.setStyleSheet("padding: 2px 8px;")
+                btn_iniciar.clicked.connect(lambda _, c=clase: self.iniciar_clase_desde_recordatorio(c))
+
+                recordatorio_layout.addWidget(lbl)
+                recordatorio_layout.addWidget(btn_iniciar)
+                reminder_layout.addWidget(recordatorio_widget)
+
+        else:
+            reminder_layout.addWidget(QLabel("No hay clases programadas."))
+
         reminder_box.setLayout(reminder_layout)
         right_layout.addWidget(reminder_box)
+        
+    
+
 
         # --------------------- SECCIÓN DE HISTORIAL ---------------------
-        history_box = QGroupBox("📚 Clases Recientes")
-        history_layout = QVBoxLayout()
-        
-        if self.historial_clases:
-            for clase in self.historial_clases[-3:]:  # Mostrar 3 más recientes
-                card = QFrame()
-                card.setStyleSheet("background-color: #3B4252; border-radius: 8px; padding: 12px;")
-                card_layout = QVBoxLayout(card)
-                
-                card_layout.addWidget(QLabel(f"📅 {clase['fecha']} - {clase['materia']}"))
-                card_layout.addWidget(QLabel(f"⏱️ Duración: {clase['duracion']}"))
-                card_layout.addWidget(QLabel(f"🟢 Asistencia: {clase['asistencia']}"))
-                
-                history_layout.addWidget(card)
-        else:
-            history_layout.addWidget(QLabel("No hay clases registradas aún"))
-        
-        history_box.setLayout(history_layout)
-        right_layout.addWidget(history_box)
+        # Sección de Notas
+        notas_box = QGroupBox("📝 Notas")
+        notas_layout = QVBoxLayout()
+
+# Botón para agregar una nueva nota
+        btn_agregar_nota = QPushButton("Agregar Nota")
+        btn_agregar_nota.setObjectName("success")
+        btn_agregar_nota.clicked.connect(self.show_agregar_nota_dialog)
+        notas_layout.addWidget(btn_agregar_nota)
+
+# Lista de notas
+        self.lista_notas = QListWidget()
+        self.lista_notas.setStyleSheet("""
+            QListWidget {
+                background-color: #3B4252;
+                border: 1px solid #4C566A;
+                border-radius: 5px;
+                padding: 8px;
+            }
+            QListWidget::item {
+                padding: 10px;
+            }
+            QListWidget::item:selected {
+                background-color: #5E81AC;
+                color: #ECEFF4;
+            }
+        """)
+        notas_layout.addWidget(self.lista_notas)
+
+        notas_box.setLayout(notas_layout)
+        right_layout.addWidget(notas_box)
 
         main_layout.addWidget(right_content)
 
         # --- Ordenamiento ---
-        right_layout.addWidget(self.content_stack, stretch=2)  # Área dinámica (60%)
+        #right_layout.addWidget(self.content_stack, stretch=2)  # Área dinámica (60%)
         right_layout.addWidget(reminder_box, stretch=1)        # Recordatorios (20%)
-        right_layout.addWidget(history_box, stretch=1)         # Historial (20%)
+        right_layout.addWidget(notas_box, stretch=1)         # Historial (20%)
 
         # ===================== BARRA DE CLASE ACTIVA (TU IMPLEMENTACIÓN ORIGINAL) =====================
         self.setup_clase_activa_ui(right_layout)
@@ -362,12 +431,39 @@ class Dashboard(QMainWindow):
     # ===================== GESTIÓN DE CLASES =====================
     # ======================Metodos Modificados Vol.2 ===============
     def show_clases_dialog(self):
+        
         self.current_dialog = QDialog(self)
         self.current_dialog.setWindowTitle("Gestionar Clases")
         self.current_dialog.setModal(False)  # Cambiado a no modal
         dialog_layout = QVBoxLayout(self.current_dialog)
         self.setup_clases_section(dialog_layout)
+        
+
+    # Botón para agregar materia
+        btn_add_materia = QPushButton("Agregar Materia")
+        btn_add_materia.setObjectName("success")
+        btn_add_materia.setFixedHeight(50)
+        btn_add_materia.clicked.connect(self.show_add_materia_dialog)
+        dialog_layout.addWidget(btn_add_materia, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    # Botón para agregar grupo
+        btn_add_grupo = QPushButton("Agregar Grupo")
+        btn_add_grupo.setObjectName("success")
+        btn_add_grupo.setFixedHeight(50)
+        btn_add_grupo.clicked.connect(self.show_create_grupo_dialog)
+        dialog_layout.addWidget(btn_add_grupo, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    # Crear un contenedor para los botones si no existe
+        btn_container = QWidget()
+        btn_layout = QHBoxLayout(btn_container)
+        btn_layout.setSpacing(15)
+        btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    # Agregar el contenedor al diálogo
+        dialog_layout.addWidget(btn_container)
+
         self.current_dialog.show()
+
 
     def show_inicio_curso_dialog(self):
         self.current_dialog = QDialog(self)
@@ -393,21 +489,48 @@ class Dashboard(QMainWindow):
         btn_iniciar.clicked.connect(lambda: self.iniciar_clase_desde_dialogo(self.current_dialog))
         dialog_layout.addWidget(btn_iniciar)
 
+
         self.current_dialog.show()
 
     def iniciar_clase_desde_dialogo(self, dialog):
         """Maneja el inicio de clase desde diálogos"""
         materia = self.combo_materias_curso.currentText()
         grupo = self.combo_grupos_curso.currentText()
-        
+
+        if not materia or not grupo:
+            QMessageBox.warning(self, "Error", "Debe seleccionar una materia y un grupo.")
+            return
+
+    # Si necesitas seleccionar el ítem en la lista de materias (opcional)
         items = self.lista_materias.findItems(materia, Qt.MatchFlag.MatchExactly)
         if items:
             self.lista_materias.setCurrentItem(items[0])
             self.combo_grupos.setCurrentText(grupo)
-            self.iniciar_clase()
-            dialog.close()  # Cerramos explícitamente el diálogo
+            self.iniciar_clase(materia, grupo)
+            dialog.close()
         else:
-            QMessageBox.warning(self, "Error", "No se pudo iniciar la clase")
+            QMessageBox.warning(self, "Error", "No se pudo iniciar la clase.")
+
+
+    def cargar_clases(self):
+        try:
+            with open("clases.json", "r") as file:
+                clases = json.load(file)
+                for clase in clases:
+                    materia = clase["materia"]
+                    grupo = clase["grupo"]
+                    if materia not in self.materias:
+                        self.materias[materia] = []
+                    if grupo not in self.materias[materia]:
+                        self.materias[materia].append(grupo)
+        except FileNotFoundError:
+            QMessageBox.warning(self, "Advertencia", "El archivo clases.json no existe. Se iniciará vacío.")
+            self.materias = {}
+        except json.JSONDecodeError:
+            QMessageBox.critical(self, "Error", "El archivo clases.json tiene un formato inválido.")
+            self.materias = {}
+
+    
 
     def setup_clases_section(self, parent_layout):
         container = QWidget()
@@ -430,7 +553,7 @@ class Dashboard(QMainWindow):
         selection_layout.setSpacing(20)
         selection_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Columna Materias
+    # Columna Materias
         materias_frame = QWidget()
         materias_layout = QVBoxLayout(materias_frame)
         materias_layout.setSpacing(10)
@@ -442,7 +565,7 @@ class Dashboard(QMainWindow):
         self.lista_materias.currentItemChanged.connect(self.actualizar_grupos)
         materias_layout.addWidget(self.lista_materias)
 
-        # Columna Grupos
+    # Columna Grupos
         grupos_frame = QWidget()
         grupos_layout = QVBoxLayout(grupos_frame)
         grupos_layout.setSpacing(10)
@@ -456,29 +579,96 @@ class Dashboard(QMainWindow):
         selection_layout.addWidget(grupos_frame)
         layout.addWidget(selection_container)
 
+    # Contenedor para los botones
+        botones_container = QWidget()
+        botones_layout = QHBoxLayout(botones_container)
+        botones_layout.setSpacing(20)
+        botones_layout.setContentsMargins(0, 20, 0, 0)
+
+    # Botones a la izquierda
+        izquierda_layout = QVBoxLayout()
+        izquierda_layout.setSpacing(10)
+        izquierda_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        btn_add_materia = QPushButton("Agregar Materia")
+        btn_add_materia.setObjectName("success")
+        btn_add_materia.setFixedHeight(50)
+        btn_add_materia.clicked.connect(self.show_add_materia_dialog)
+        izquierda_layout.addWidget(btn_add_materia)
+
+        btn_add_grupo = QPushButton("Agregar Grupo")
+        btn_add_grupo.setObjectName("success")
+        btn_add_grupo.setFixedHeight(50)
+        btn_add_grupo.clicked.connect(self.show_create_grupo_dialog)
+        izquierda_layout.addWidget(btn_add_grupo)
+
+        botones_layout.addLayout(izquierda_layout)
+
+    # Botones a la derecha
+        derecha_layout = QVBoxLayout()
+        derecha_layout.setSpacing(10)
+        derecha_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+
         self.btn_iniciar = QPushButton("INICIAR CLASE")
         self.btn_iniciar.setObjectName("success")
         self.btn_iniciar.setFixedHeight(50)
         self.btn_iniciar.setEnabled(False)
         self.btn_iniciar.clicked.connect(self.iniciar_clase)
-        layout.addWidget(self.btn_iniciar, alignment=Qt.AlignmentFlag.AlignCenter)
+        derecha_layout.addWidget(self.btn_iniciar)
 
-        # Botones de gestión
-        btn_container = QWidget()
-        btn_layout = QHBoxLayout(btn_container)
-        btn_layout.setSpacing(15)
-        btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        btn_create_clase = QPushButton("CREAR CLASE")
+        btn_create_clase.setObjectName("success")
+        btn_create_clase.setFixedHeight(50)
+        btn_create_clase.setEnabled(False)
+        btn_create_clase.clicked.connect(self.crear_clase_desde_gestionar)
+        derecha_layout.addWidget(btn_create_clase)
 
-        btn_add_materia = QPushButton("Añadir Materia")
-        btn_add_materia.clicked.connect(self.show_add_materia_dialog)
-        btn_layout.addWidget(btn_add_materia)
+        botones_layout.addLayout(derecha_layout)
 
-        btn_create_grupo = QPushButton("Crear Grupo")
-        btn_create_grupo.clicked.connect(self.show_create_grupo_dialog)
-        btn_layout.addWidget(btn_create_grupo)
+        layout.addWidget(botones_container)
 
-        layout.addWidget(btn_container)
+    # Actualizar estado de los botones según la selección
+        self.lista_materias.currentItemChanged.connect(lambda: self.actualizar_botones(btn_create_clase))
+        self.combo_grupos.currentTextChanged.connect(lambda: self.actualizar_botones(btn_create_clase))
+
         parent_layout.addWidget(container)
+
+    def actualizar_botones(self, btn_create_clase):
+        """Habilita o deshabilita los botones según la selección."""
+        materia_seleccionada = self.lista_materias.currentItem() is not None
+        grupo_seleccionado = self.combo_grupos.currentText() != ""
+        btn_create_clase.setEnabled(materia_seleccionada and grupo_seleccionado)
+        self.btn_iniciar.setEnabled(materia_seleccionada and grupo_seleccionado)
+
+    def crear_clase_desde_gestionar(self):
+        """Guarda la clase seleccionada en un archivo JSON."""
+        materia = self.lista_materias.currentItem().text()
+        grupo = self.combo_grupos.currentText()
+
+        # Cargar clases existentes
+        try:
+            with open("clases.json", "r") as file:
+                clases = json.load(file)
+        except FileNotFoundError:
+            clases = []
+
+        # Verificar si la clase ya existe
+        for clase in clases:
+            if clase["materia"] == materia and clase["grupo"] == grupo:
+                QMessageBox.warning(self, "Error", "La clase ya existe.")
+                return
+
+        # Agregar la nueva clase
+        clases.append({
+            "materia": materia,
+            "grupo": grupo
+        })
+
+        # Guardar en el archivo JSON
+        with open("clases.json", "w") as file:
+            json.dump(clases, file, indent=4)
+
+        QMessageBox.information(self, "Éxito", f"Clase {materia} - {grupo} creada correctamente.")
 
     def actualizar_grupos(self, current_item):
         """Actualiza los grupos disponibles cuando se selecciona una materia"""
@@ -487,41 +677,129 @@ class Dashboard(QMainWindow):
             self.combo_grupos.clear()
             self.combo_grupos.addItems(self.materias.get(materia, []))
             self.btn_iniciar.setEnabled(self.combo_grupos.count() > 0)
+            
+    def iniciar_clase(self, materia=None, grupo=None, datos_clase=None):
+        """
+        Método principal para iniciar una clase.
+        Puede recibir materia y grupo directamente, o un diccionario datos_clase con el formato {"clase": "Materia - Grupo"}
+        """
+    # Permitir llamada con datos_clase (desde recordatorio)
+        if datos_clase is not None:
+            if "clase" in datos_clase and " - " in datos_clase["clase"]:
+                materia, grupo = datos_clase["clase"].split(" - ", 1)
+            else:
+                QMessageBox.warning(self, "Error", "Datos de clase incompletos.")
+                return
+        else:
+            # Si no se pasan argumentos, obtenerlos de la interfaz
+            if materia is None or grupo is None:
+                if self.lista_materias.currentItem() is None:
+                    QMessageBox.warning(self, "Error", "Debe seleccionar una materia.")
+                    return
+                materia = self.lista_materias.currentItem().text()
+                grupo = self.combo_grupos.currentText()
+                if not grupo:
+                    QMessageBox.warning(self, "Error", "Debe seleccionar un grupo.")
+                    return
 
-    def iniciar_clase(self):
-        """Método principal para iniciar una clase"""
-        materia = self.lista_materias.currentItem().text()
-        grupo = self.combo_grupos.currentText()
-        
+    # Busca alumnos
+        alumnos = self.alumnos.get(grupo, [])
+        if not alumnos:
+            QMessageBox.warning(self, "Sin alumnos", f"No hay alumnos registrados en el grupo {grupo}.")
+            return
+
+    # Configura la clase activa
         self.clase_activa = True
         self.hora_inicio_clase = datetime.now().time()
         self.barra_clase_container.show()
         self.lbl_detalle_clase.setText(f"{materia} - {grupo} | Iniciada: {self.hora_inicio_clase.strftime('%H:%M')}")
-        
-        # Configurar tabla de asistencia
-        alumnos = self.alumnos.get(grupo, [])
+
+    # Configura la tabla de asistencia
         self.tabla_asistencia.setRowCount(len(alumnos))
-        
         for idx, alumno in enumerate(alumnos):
             self.tabla_asistencia.setItem(idx, 0, QTableWidgetItem(str(idx + 1)))
             self.tabla_asistencia.setItem(idx, 1, QTableWidgetItem(alumno['nombre']))
             self.tabla_asistencia.setItem(idx, 2, QTableWidgetItem(alumno['matricula']))
             self.tabla_asistencia.setItem(idx, 3, QTableWidgetItem("--:--:--"))
-            
             estado_item = QTableWidgetItem("No registrado")
             estado_item.setForeground(QColor(136, 192, 208))
             self.tabla_asistencia.setItem(idx, 4, estado_item)
-        
+
         self.tabla_asistencia.resizeColumnsToContents()
         self.simular_llegadas_alumnos(grupo)
-        
+
+    # Elimina botones existentes para evitar duplicados
+        for i in reversed(range(self.barra_clase_layout.count())):
+            widget = self.barra_clase_layout.itemAt(i).widget()
+            if isinstance(widget, QPushButton):
+                self.barra_clase_layout.removeWidget(widget)
+                widget.deleteLater()
+
+    # Botón para finalizar clase
         btn_finalizar = QPushButton("Finalizar Clase")
         btn_finalizar.setObjectName("danger")
         btn_finalizar.clicked.connect(self.finalizar_clase)
         self.barra_clase_layout.addWidget(btn_finalizar, alignment=Qt.AlignmentFlag.AlignCenter)
 
+    # Botón para registro manual
+        btn_registro_manual = QPushButton("Registro Manual")
+        btn_registro_manual.setObjectName("success")
+        btn_registro_manual.clicked.connect(self.registrar_llegada_manual)
+        self.barra_clase_layout.addWidget(btn_registro_manual, alignment=Qt.AlignmentFlag.AlignCenter)
+
+
+    def crear_clase(self, materia, grupo, horario, aula, fecha_inicio, fecha_fin, dialog):
+        """Guarda una clase en un archivo JSON."""
+        if not materia or not grupo or not horario or not aula or not fecha_inicio or not fecha_fin:
+            QMessageBox.warning(self, "Error", "Todos los campos son obligatorios.")
+            return
+
+    # Cargar clases existentes
+        try:
+            with open("clases.json", "r") as file:
+                clases = json.load(file)
+        except FileNotFoundError:
+            clases = []
+
+    # Agregar la nueva clase
+        clases.append({
+            "materia": materia,
+            "grupo": grupo,
+            "horario": horario,
+            "aula": aula,
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin
+        })
+
+    # Guardar en el archivo JSON
+        with open("clases.json", "w") as file:
+            json.dump(clases, file, indent=4)
+
+        QMessageBox.information(self, "Éxito", "Clase creada correctamente.")
+        dialog.close()
+
+    # Actualizar la lista de clases en "Gestionar Clases"
+        self.actualizar_lista_clases()
+
+
+    def actualizar_lista_clases(self):
+        """Actualiza la lista de clases en 'Gestionar Clases'."""
+        try:
+        # Cargar clases desde el archivo JSON
+            with open("clases.json", "r") as file:
+                clases = json.load(file)
+
+        # Mostrar las clases en una tabla o lista
+            for clase in clases:
+                print(f"Clase: {clase['materia']} - {clase['grupo']} | Horario: {clase['horario']} | Aula: {clase['aula']}")
+
+        except FileNotFoundError:
+            QMessageBox.warning(self, "Error", "No hay clases creadas.")
+
     # ===================== DIÁLOGOS DE GESTIÓN =====================
     def show_add_materia_dialog(self):
+
+        self.show_blur_overlay()
         dialog = QDialog(self)
         dialog.setWindowTitle("Nueva Materia")
         dialog.setModal(True)
@@ -536,15 +814,19 @@ class Dashboard(QMainWindow):
 
         dialog_layout.addLayout(form)
         dialog_layout.addWidget(btn_guardar)
+        dialog.finished.connect(self.hide_blur_overlay)
         dialog.exec()
 
     def add_materia(self, dialog):
         nombre = self.input_materia.text().strip()
         if nombre:
-            self.materias[nombre] = []
-            self.lista_materias.addItem(nombre)
-            dialog.close()
-            QMessageBox.information(self, "Éxito", "Materia añadida correctamente")
+            if nombre not in self.materias:
+                self.materias[nombre] = []
+                self.lista_materias.addItem(nombre)
+                dialog.close()
+                QMessageBox.information(self, "Éxito", "Materia añadida correctamente")
+            else:
+                QMessageBox.warning(self, "Error", "El nombre no puede estar vacío")
         else:
             QMessageBox.warning(self, "Error", "El nombre no puede estar vacío")
 
@@ -570,49 +852,41 @@ class Dashboard(QMainWindow):
         dialog.exec()
 
     def create_grupo(self, dialog):
+        """Agrega un nuevo grupo a la materia seleccionada y actualiza el combo de grupos."""
         materia = self.combo_materias_grupo.currentText()
         nombre_grupo = self.input_grupo.text().strip()
 
         if nombre_grupo:
             if nombre_grupo not in self.materias[materia]:
-                self.materias[materia].append(nombre_grupo)
-                self.actualizar_grupos(self.lista_materias.currentItem())
+                self.materias[materia].append(nombre_grupo)  # Agregar el grupo a la materia
+                if self.lista_materias.currentItem() and self.lista_materias.currentItem().text() == materia:
+                    self.actualizar_grupos(self.lista_materias.currentItem())  # Actualizar el combo de grupos
                 dialog.close()
                 QMessageBox.information(self, "Éxito", "Grupo creado correctamente")
             else:
-                QMessageBox.warning(self, "Error", "El grupo ya existe")
+                QMessageBox.warning(self, "Error", "El grupo ya existe.")
         else:
             QMessageBox.warning(self, "Error", "El nombre no puede estar vacío")
 
     # ===================== REGISTRO DE ALUMNOS =====================
     def show_registro_alumnos_dialog(self):
-        """Muestra el formulario para registrar alumnos."""
-        # Limpiar contenido anterior
-        self.clear_content_area()
+        """Muestra el formulario de registro de alumnos en un QDialog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Registrar Alumnos")
+        dialog.setModal(True)  # Hacer que el diálogo sea modal
+        dialog.setMinimumSize(400, 300)
+        layout = QVBoxLayout(dialog)
 
-        # Crear widget de registro
-        registro_widget = QWidget()
-        layout = QVBoxLayout(registro_widget)
-
-        # --- Formulario de registro ---
+        # Crear el formulario de registro
         form = QFormLayout()
 
-        # Selección de grupo
-        self.combo_grupos_registro = QComboBox()
-        self.combo_grupos_registro.addItems(sum(self.materias.values(), []))
-        form.addRow("Grupo:", self.combo_grupos_registro)
-
-        # Nombre del alumno
-        self.input_nombre = QLineEdit()
-        form.addRow("Nombre(s):", self.input_nombre)
-
-        # Apellidos del alumno
-        self.input_apellidos = QLineEdit()
-        form.addRow("Apellidos:", self.input_apellidos)
-
-        # Selección de carrera
-        self.combo_carrera = QComboBox()
-        self.combo_carrera.addItems([
+        # Campos del formulario
+        input_nombre = QLineEdit()
+        input_apellidos = QLineEdit()
+        combo_grupo = QComboBox()
+        combo_grupo.addItems(sum(self.materias.values(), []))  # Agregar grupos disponibles
+        combo_carrera = QComboBox()
+        combo_carrera.addItems([
             "Ingeniería en Sistemas Computacionales",
             "Ingeniería Electrónica",
             "Ingeniería Mecatrónica",
@@ -624,26 +898,78 @@ class Dashboard(QMainWindow):
             "Ingeniería en Software",
             "Ingeniería en Telecomunicaciones"
         ])
-        form.addRow("Carrera:", self.combo_carrera)
 
-        # Número de control (generado automáticamente)
-        self.lbl_numero_control = QLabel("Se generará automáticamente")
-        form.addRow("Número de Control:", self.lbl_numero_control)
+        # Añadir campos al formulario
+        form.addRow("Nombre(s):", input_nombre)
+        form.addRow("Apellidos:", input_apellidos)
+        form.addRow("Grupo:", combo_grupo)
+        form.addRow("Carrera:", combo_carrera)
 
-        # Registro de huella dactilar
-        self.btn_registrar_huella = QPushButton("Registrar Huella Dactilar")
-        self.btn_registrar_huella.clicked.connect(self.registrar_huella_dactilar)
-        form.addRow("Huella Dactilar:", self.btn_registrar_huella)
+        # Botón para registrar huella dactilar
+        btn_registrar_huella = QPushButton("Registrar Huella Dactilar")
+        btn_registrar_huella.clicked.connect(self.registrar_huella_dactilar)
+        form.addRow("Huella Dactilar:", btn_registrar_huella)
 
-        # Botón para guardar el alumno
-        btn_guardar = QPushButton("Registrar Alumno")
-        btn_guardar.clicked.connect(self.guardar_alumno)
+
+        # Botón para registrar
+        btn_registrar = QPushButton("Registrar")
+        btn_registrar.clicked.connect(lambda: self.registrar_alumno(
+            input_nombre.text(),
+            input_apellidos.text(),
+            combo_grupo.currentText(),
+            combo_carrera.currentText(),
+            dialog
+        ))
+
+        # Añadir formulario y botón al layout del diálogo
         layout.addLayout(form)
-        layout.addWidget(btn_guardar)
+        layout.addWidget(btn_registrar)
 
-        # Mostrar en el área de contenido
-        self.content_stack.addWidget(registro_widget)
-        self.content_stack.setCurrentWidget(registro_widget)
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def registrar_huella_dactilar(self):
+        """Simula el registro de huella dactilar (código comentado para Arduino)."""
+        QMessageBox.information(self, "Registro de Huella", "Conecte el sensor de huellas para registrar.")
+         # Código para Arduino (comentado por ahora)
+        """
+        import serial
+        arduino = serial.Serial('COM3', 9600, timeout=1)  # Ajustar el puerto COM según tu configuración
+        arduino.write(b'REGISTRAR_HUELLA')
+        respuesta = arduino.readline().decode('utf-8').strip()
+        if respuesta == 'HUELLA_REGISTRADA':
+            QMessageBox.information(self, "Éxito", "Huella registrada correctamente.")
+        else:
+            QMessageBox.warning(self, "Error", "No se pudo registrar la huella.")
+        arduino.close()
+        """
+
+
+
+    def registrar_alumno(self, nombre, apellidos, grupo, carrera, dialog):
+        """Registra un alumno con los datos proporcionados."""
+        if not nombre or not apellidos:
+            QMessageBox.warning(self, "Error", "Todos los campos son obligatorios.")
+            return
+
+        # Generar número de control único
+        numero_control = self.generar_numero_control()
+
+        # Verificar si el grupo existe
+        if grupo not in self.alumnos:
+            self.alumnos[grupo] = []
+
+        # Guardar alumno
+        self.alumnos[grupo].append({
+            'nombre': nombre,
+            'apellidos': apellidos,
+            'carrera': carrera,
+            'numero_control': numero_control,
+            'matricula': numero_control
+        })
+
+        QMessageBox.information(self, "Éxito", f"Alumno registrado correctamente.\nNúmero de Control: {numero_control}")
+        dialog.close()
 
     def generar_numero_control(self):
         anio_actual = datetime.now().year % 100  # Últimos 2 dígitos (ej: 23 para 2023)
@@ -659,73 +985,6 @@ class Dashboard(QMainWindow):
             ):
                 return numero_control
 
-    def registrar_huella_dactilar(self):
-        """Simula el registro de huella dactilar (código comentado para Arduino)."""
-        QMessageBox.information(self, "Registro de Huella", "Conecte el sensor de huellas para registrar.")
-
-        # Código para Arduino (comentado por ahora)
-        """
-        import serial
-        arduino = serial.Serial('COM3', 9600, timeout=1)  # Ajustar el puerto COM según tu configuración
-        arduino.write(b'REGISTRAR_HUELLA')
-        respuesta = arduino.readline().decode('utf-8').strip()
-        if respuesta == 'HUELLA_REGISTRADA':
-            QMessageBox.information(self, "Éxito", "Huella registrada correctamente.")
-        else:
-            QMessageBox.warning(self, "Error", "No se pudo registrar la huella.")
-        arduino.close()
-        """
-
-    def guardar_alumno(self):
-        """Guarda los datos del alumno con número de control único."""
-        try:
-            grupo = self.combo_grupos_registro.currentText()
-            nombre = self.input_nombre.text().strip()
-            apellidos = self.input_apellidos.text().strip()
-            carrera = self.combo_carrera.currentText()
-
-            # Validar campos obligatorios
-            if not grupo:
-                QMessageBox.warning(self, "Error", "Seleccione un grupo.")
-                return
-            if not nombre or not apellidos:
-                QMessageBox.warning(self, "Error", "Nombre y apellidos son obligatorios.")
-                return
-
-        # Generar número de control único (usando tu método)
-            numero_control = self.generar_numero_control()
-
-        # Inicializar lista de alumnos si el grupo no existe
-            if grupo not in self.alumnos:
-                self.alumnos[grupo] = []
-
-        # Guardar alumno con número de control y matrícula (opcional)
-            self.alumnos[grupo].append({
-                'nombre': f"{nombre} {apellidos}",
-                'matricula': numero_control,  # Usamos el número de control como matrícula
-                'numero_control': numero_control,  # Campo adicional
-                'carrera': carrera
-            })
-
-            QMessageBox.information(
-                self,
-                "Éxito",
-                f"Alumno registrado.\nNúmero de Control: {numero_control}"
-            )
-            self.clear_content_area()
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al registrar: {str(e)}")
-
-    def clear_content_area(self):
-        # Eliminar todos los widgets excepto el vacío inicial
-        while self.content_stack.count() > 1:
-            widget = self.content_stack.widget(1)
-            self.content_stack.removeWidget(widget)
-            widget.deleteLater()
-        
-        self.content_stack.setCurrentWidget(self.empty_content)
-
     # ===================== CONSULTA DE ALUMNOS =====================
     def show_consulta_alumnos_dialog(self):
         dialog = QDialog(self)
@@ -734,29 +993,147 @@ class Dashboard(QMainWindow):
         dialog.setMinimumSize(800, 500)
         dialog_layout = QVBoxLayout(dialog)
 
+        # --- Campo de búsqueda ---
+        search_layout = QHBoxLayout()
+        input_busqueda = QLineEdit()
+        input_busqueda.setPlaceholderText("Buscar alumno por nombre o matrícula...")
+        btn_buscar = QPushButton("Buscar")
+        search_layout.addWidget(input_busqueda)
+        search_layout.addWidget(btn_buscar)
+        dialog_layout.addLayout(search_layout)
+
+        # --- Tabla de alumnos ---
         self.tabla_consulta = QTableWidget()
         self.tabla_consulta.setColumnCount(3)
         self.tabla_consulta.setHorizontalHeaderLabels(["Grupo", "Nombre", "Matrícula"])
         self.tabla_consulta.verticalHeader().setVisible(False)
         self.tabla_consulta.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-
-        self.actualizar_tabla_todos_alumnos()
-
         dialog_layout.addWidget(self.tabla_consulta)
-        dialog.exec()
 
+        # Actualizar la tabla con los datos de los alumnos
+        try:
+            self.actualizar_tabla_todos_alumnos()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cargar los alumnos: {e}")
+            return
+
+        # --- Botón para añadir a la clase activa ---
+        btn_añadir_clase = QPushButton("Añadir a Clase Activa")
+        btn_añadir_clase.clicked.connect(lambda: self.agregar_a_clase_activa(dialog))
+        dialog_layout.addWidget(btn_añadir_clase)
+
+        # Conectar el botón de búsqueda
+        btn_buscar.clicked.connect(lambda: self.buscar_alumno(input_busqueda.text()))
+
+        dialog.exec()
+        
+    def mostrar_dialogo_agregar_alumno(self, parent_dialog):
+        dialog = QDialog(parent_dialog)
+        dialog.setWindowTitle("Agregar Alumno")
+        layout = QVBoxLayout(dialog)
+
+    # Combo para grupo
+        combo_grupo = QComboBox()
+        combo_grupo.addItems(self.alumnos.keys())
+        layout.addWidget(QLabel("Grupo:"))
+        layout.addWidget(combo_grupo)
+
+    # Nombre y matrícula
+        input_nombre = QLineEdit()
+        input_matricula = QLineEdit()
+        layout.addWidget(QLabel("Nombre:"))
+        layout.addWidget(input_nombre)
+        layout.addWidget(QLabel("Matrícula:"))
+        layout.addWidget(input_matricula)
+
+    # Botón guardar
+        btn_guardar = QPushButton("Guardar")
+        btn_guardar.clicked.connect(lambda: self.guardar_alumno(combo_grupo.currentText(), input_nombre.text(), input_matricula.text(), dialog, parent_dialog))
+        layout.addWidget(btn_guardar)
+
+        dialog.exec()
+        
+    def guardar_alumno(self, grupo, nombre, matricula, dialog, parent_dialog):
+        if not nombre or not matricula:
+            QMessageBox.warning(dialog, "Error", "Nombre y matrícula son obligatorios.")
+            return
+    # Agrega el alumno (usa tu función de agregar alumno aquí)
+        self.agregar_alumno(grupo, nombre, matricula)
+        dialog.accept()
+        self.actualizar_tabla_todos_alumnos()
+    # Si quieres que el diálogo principal se actualice también:
+        parent_dialog.repaint()
+        
     def actualizar_tabla_todos_alumnos(self):
+        """Llena la tabla de consulta con los datos de los alumnos."""
+    # Asegúrate de que la tabla esté inicializada
+        if not hasattr(self, 'tabla_consulta'):
+            QMessageBox.critical(self, "Error", "La tabla de consulta no está inicializada.")
+            return
+
+    # Limpiar la tabla antes de llenarla
         self.tabla_consulta.setRowCount(0)
-        row = 0
+
+    # Llenar la tabla con los datos de los alumnos
         for grupo, alumnos in self.alumnos.items():
             for alumno in alumnos:
-                self.tabla_consulta.insertRow(row)
-                self.tabla_consulta.setItem(row, 0, QTableWidgetItem(grupo))
-                self.tabla_consulta.setItem(row, 1, QTableWidgetItem(alumno['nombre']))
-                self.tabla_consulta.setItem(row, 2, QTableWidgetItem(alumno['matricula']))
-                row += 1
+                row_position = self.tabla_consulta.rowCount()
+                self.tabla_consulta.insertRow(row_position)
+                self.tabla_consulta.setItem(row_position, 0, QTableWidgetItem(grupo))
+                self.tabla_consulta.setItem(row_position, 1, QTableWidgetItem(alumno.get("nombre", "Sin nombre")))
+                self.tabla_consulta.setItem(row_position, 2, QTableWidgetItem(alumno.get("matricula", "Sin matrícula")))
 
-        self.tabla_consulta.resizeColumnsToContents()
+    def buscar_alumno(self, texto_busqueda):
+        """Filtra los alumnos en la tabla según el texto ingresado."""
+        texto_busqueda = texto_busqueda.strip().lower()
+        self.tabla_consulta.setRowCount(0)  # Limpiar la tabla
+
+        for grupo, alumnos in self.alumnos.items():
+            for alumno in alumnos:
+                if (texto_busqueda in alumno.get("nombre", "").lower() or
+                    texto_busqueda in alumno.get("matricula", "").lower()):
+                    row_position = self.tabla_consulta.rowCount()
+                    self.tabla_consulta.insertRow(row_position)
+                    self.tabla_consulta.setItem(row_position, 0, QTableWidgetItem(grupo))
+                    self.tabla_consulta.setItem(row_position, 1, QTableWidgetItem(alumno.get("nombre", "Sin nombre")))
+                    self.tabla_consulta.setItem(row_position, 2, QTableWidgetItem(alumno.get("matricula", "Sin matrícula")))
+
+    def agregar_a_clase_activa(self, dialog):
+        """Añade el alumno seleccionado a la clase activa."""
+        if not self.clase_activa:
+            QMessageBox.warning(self, "Error", "No hay una clase activa.")
+            return
+
+    # Obtener la fila seleccionada
+        fila_seleccionada = self.tabla_consulta.currentRow()
+        if fila_seleccionada == -1:
+            QMessageBox.warning(self, "Error", "Debe seleccionar un alumno.")
+            return
+
+    # Obtener los datos del alumno
+        grupo = self.tabla_consulta.item(fila_seleccionada, 0).text()
+        nombre = self.tabla_consulta.item(fila_seleccionada, 1).text()
+        matricula = self.tabla_consulta.item(fila_seleccionada, 2).text()
+
+    # Verificar si el grupo coincide con la clase activa
+        grupo_clase_activa = self.combo_grupos.currentText()
+        if grupo != grupo_clase_activa:
+            QMessageBox.warning(self, "Error", f"El alumno pertenece al grupo {grupo}, no al grupo activo {grupo_clase_activa}.")
+            return
+
+    # Añadir el alumno a la tabla de asistencia
+        row_position = self.tabla_asistencia.rowCount()
+        self.tabla_asistencia.insertRow(row_position)
+        self.tabla_asistencia.setItem(row_position, 0, QTableWidgetItem(str(row_position + 1)))
+        self.tabla_asistencia.setItem(row_position, 1, QTableWidgetItem(nombre))
+        self.tabla_asistencia.setItem(row_position, 2, QTableWidgetItem(matricula))
+        self.tabla_asistencia.setItem(row_position, 3, QTableWidgetItem("--:--:--"))
+        estado_item = QTableWidgetItem("No registrado")
+        estado_item.setForeground(QColor(136, 192, 208))
+        self.tabla_asistencia.setItem(row_position, 4, estado_item)
+
+        QMessageBox.information(self, "Éxito", f"Alumno {nombre} añadido a la clase activa.")
+        dialog.close()
 
     # ===================== INICIO DE CURSO =====================
     def show_inicio_curso_dialog(self):
@@ -791,125 +1168,106 @@ class Dashboard(QMainWindow):
         self.combo_grupos_curso.clear()
         self.combo_grupos_curso.addItems(self.materias.get(materia, []))
 
-    def iniciar_clase_desde_dialogo(self, dialog):
-        materia = self.combo_materias_curso.currentText()
-        grupo = self.combo_grupos_curso.currentText()
-    
-        items = self.lista_materias.findItems(materia, Qt.MatchFlag.MatchExactly)
-        if items:
-            self.lista_materias.setCurrentItem(items[0])
-            self.combo_grupos.setCurrentText(grupo)
-            self.iniciar_clase(dialog)  # Pasamos el diálogo como parámetro
-        else:
-            QMessageBox.warning(self, "Error", "No se pudo iniciar la clase")
-
-    def iniciar_clase(self):
-        """Método principal para iniciar una clase"""
-        materia = self.lista_materias.currentItem().text()
-        grupo = self.combo_grupos.currentText()
-    
-        self.clase_activa = True
-        self.hora_inicio_clase = datetime.now().time()
-        self.barra_clase_container.show()
-        self.lbl_detalle_clase.setText(f"{materia} - {grupo} | Iniciada: {self.hora_inicio_clase.strftime('%H:%M')}")
-
-        # Configurar tabla de asistencia
-        alumnos = self.alumnos.get(grupo, [])
-        self.tabla_asistencia.setRowCount(len(alumnos))
-    
-        for idx, alumno in enumerate(alumnos):
-            self.tabla_asistencia.setItem(idx, 0, QTableWidgetItem(str(idx + 1)))
-            self.tabla_asistencia.setItem(idx, 1, QTableWidgetItem(alumno['nombre']))
-            self.tabla_asistencia.setItem(idx, 2, QTableWidgetItem(alumno['matricula']))
-            self.tabla_asistencia.setItem(idx, 3, QTableWidgetItem("--:--:--"))
-        
-            estado_item = QTableWidgetItem("No registrado")
-            estado_item.setForeground(QColor(136, 192, 208))
-            self.tabla_asistencia.setItem(idx, 4, estado_item)
-    
-        self.tabla_asistencia.resizeColumnsToContents()
-        self.simular_llegadas_alumnos(grupo)
-
-        # Eliminar botones existentes para evitar duplicados
-        for i in reversed(range(self.barra_clase_layout.count())):
-            widget = self.barra_clase_layout.itemAt(i).widget()
-            if isinstance(widget, QPushButton):  # Solo eliminar botones
-                self.barra_clase_layout.removeWidget(widget)
-                widget.deleteLater()
-
-        # Botón para finalizar clase
-        btn_finalizar = QPushButton("Finalizar Clase")
-        btn_finalizar.setObjectName("danger")
-        btn_finalizar.clicked.connect(self.finalizar_clase)
-        self.barra_clase_layout.addWidget(btn_finalizar, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        # Botón para registro manual
-        btn_registro_manual = QPushButton("Registro Manual")
-        btn_registro_manual.setObjectName("success")
-        btn_registro_manual.clicked.connect(self.registrar_llegada_manual)
-        self.barra_clase_layout.addWidget(btn_registro_manual, alignment=Qt.AlignmentFlag.AlignCenter)
 
     #=====================================METODO DE EXPORTACION===========================================================
+
     def show_exportar_dialog(self):
-        """Muestra el diálogo para exportar datos a PDF."""
+    # 1. Seleccionar el PDF
+        file_dialog = QFileDialog(self)
+        file_dialog.setNameFilter("Archivos PDF (*.pdf)")
+        if file_dialog.exec():
+            pdf_path = file_dialog.selectedFiles()[0]
+        
+        # 2. Extraer los datos
+            datos = extraer_datos_pdf(pdf_path)
+            if not datos:
+                QMessageBox.warning(self, "Error", "No se pudieron extraer datos del PDF.")
+                return
+        
+            materia = datos.get('materia')
+            grupo = datos.get('grupo')
+            profesor = datos.get('profesor', '')
+            horario = datos.get('horario', '')
+            alumnos = datos.get('alumnos', [])
+        
+        # 3. Mostrar confirmación
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Confirmar importación")
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(QLabel(f"<b>Materia:</b> {materia}"))
+            layout.addWidget(QLabel(f"<b>Grupo:</b> {grupo}"))
+            layout.addWidget(QLabel(f"<b>Profesor:</b> {profesor}"))
+            layout.addWidget(QLabel(f"<b>Horario:</b> {horario}"))
+            layout.addWidget(QLabel(f"<b>Alumnos encontrados:</b> {len(alumnos)}"))
+            for alumno in alumnos[:5]:
+                layout.addWidget(QLabel(f"- {alumno['nombre']} ({alumno['numero_control']})"))
+            if len(alumnos) > 5:
+                layout.addWidget(QLabel("..."))
+        
+            btn_confirmar = QPushButton("Registrar en la base de datos")
+            def confirmar():
+                exito = insertar_datos_pdf(datos)
+                if exito:
+                    QMessageBox.information(self, "Éxito", "Datos registrados correctamente.")
+                else:
+                    QMessageBox.warning(self, "Error", "Ocurrió un error al registrar los datos.")
+                dialog.accept()
+            btn_confirmar.clicked.connect(confirmar)
+            layout.addWidget(btn_confirmar)
+            dialog.setLayout(layout)
+            dialog.exec()
+            
+    def mostrar_ventana_confirmacion(self, materia, grupo, alumnos):
+        """Muestra una ventana de confirmación después de importar datos."""
         dialog = QDialog(self)
-        dialog.setWindowTitle("Exportar a PDF")
-        dialog.setModal(True)
-        dialog_layout = QVBoxLayout(dialog)
-    
-    # Formulario para seleccionar qué exportar
-        form = QFormLayout()
-    
-    # Combo para seleccionar el tipo de reporte
-        self.combo_tipo_reporte = QComboBox()
-        self.combo_tipo_reporte.addItems([
-            "Lista de alumnos por grupo",
-            "Asistencias por clase",
-            "Historial completo de clases"
-        ])
-        form.addRow("Tipo de reporte:", self.combo_tipo_reporte)
-    
-    # Combo para filtrar por materia/grupo si es necesario
-        self.combo_filtro = QComboBox()
-        self.combo_filtro.addItems(sum([[f"{materia} - {grupo}" 
-                                    for grupo in grupos] 
-                                    for materia, grupos in self.materias.items()], []))
-        form.addRow("Filtrar por:", self.combo_filtro)
-    
-        dialog_layout.addLayout(form)
-    
-    # Botones de acción
-        btn_container = QWidget()
-        btn_layout = QHBoxLayout(btn_container)
-    
-        btn_exportar_pdf = QPushButton("Exportar PDF")
-        btn_exportar_pdf.setObjectName("success")
-        btn_exportar_pdf.clicked.connect(lambda: self.exportar_a_pdf(dialog))
-    
-        btn_cancelar = QPushButton("Cancelar")
-        btn_cancelar.clicked.connect(dialog.close)
-    
-        btn_layout.addWidget(btn_exportar_pdf)
-        btn_layout.addWidget(btn_cancelar)
-    
-        dialog_layout.addWidget(btn_container)
+        dialog.setWindowTitle("Importación exitosa")
+        layout = QVBoxLayout(dialog)
+
+    # Mensaje de éxito
+        layout.addWidget(QLabel(f"<b>¡Clase y grupo agregados correctamente!</b>"))
+        layout.addWidget(QLabel(f"<b>Materia:</b> {materia}"))
+        layout.addWidget(QLabel(f"<b>Grupo:</b> {grupo}"))
+        layout.addWidget(QLabel(f"<b>Alumnos registrados:</b>"))
+
+    # Lista de alumnos
+        lista_alumnos = QListWidget()
+        for alumno in alumnos:
+            lista_alumnos.addItem(f"{alumno['nombre']} ({alumno['numero_control']})")
+        layout.addWidget(lista_alumnos)
+
+    # Botón de cierre
+        btn_cerrar = QPushButton("Cerrar")
+        btn_cerrar.clicked.connect(dialog.accept)
+        layout.addWidget(btn_cerrar)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+            
+    def mostrar_ventana_confirmacion(self, materia, grupo, alumnos):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Importación exitosa")
+        layout = QVBoxLayout(dialog)
+
+    # Mensaje de éxito
+        layout.addWidget(QLabel(f"<b>¡Clase y grupo agregados correctamente!</b>"))
+        layout.addWidget(QLabel(f"<b>Materia:</b> {materia}"))
+        layout.addWidget(QLabel(f"<b>Grupo:</b> {grupo}"))
+        layout.addWidget(QLabel(f"<b>Alumnos registrados:</b>"))
+
+    # Lista de alumnos
+        lista_alumnos = QListWidget()
+        for alumno in alumnos:
+            lista_alumnos.addItem(f"{alumno['nombre']} ({alumno['numero_control']})")
+        layout.addWidget(lista_alumnos)
+
+    # Botón de cierre
+        btn_cerrar = QPushButton("Cerrar")
+        btn_cerrar.clicked.connect(dialog.accept)
+        layout.addWidget(btn_cerrar)
+
+        dialog.setLayout(layout)
         dialog.exec()
 
-    def exportar_a_pdf(self, dialog):
-        """Exporta los datos seleccionados a un archivo PDF."""
-        tipo_reporte = self.combo_tipo_reporte.currentText()
-        filtro = self.combo_filtro.currentText()
-    
-        QMessageBox.information(
-            self, 
-            "Exportación pendiente", 
-            f"La función para exportar {tipo_reporte} a PDF será implementada próximamente.\n\n"
-            f"Filtro seleccionado: {filtro}"
-        )
-    
-    # Aquí irá el código que tu compañero desarrollará para la exportación a PDF
-    
-        dialog.close()
 
     # ===================== MÉTODOS DE SIMULACIÓN =====================
     def simular_llegadas_alumnos(self, grupo):
@@ -921,25 +1279,29 @@ class Dashboard(QMainWindow):
         if not self.clase_activa:
             self.simulacion_timer.stop()
             return
-        
+
         grupo = self.combo_grupos.currentText()
         alumnos_grupo = self.alumnos.get(grupo, [])
-        
-        # Seleccionar un alumno aleatorio que no haya llegado aún
+
+    # Seleccionar un alumno aleatorio que no haya llegado aún
         alumnos_no_registrados = [
-            (i, alumno) for i, alumno in enumerate(alumnos_grupo) 
+            (i, alumno) for i, alumno in enumerate(alumnos_grupo)
             if self.tabla_asistencia.item(i, 3).text() == "--:--:--"
         ]
-        
+
         if alumnos_no_registrados:
             idx, alumno = choice(alumnos_no_registrados)
             hora_llegada = datetime.now().strftime("%H:%M:%S")
-            
+
             self.tabla_asistencia.setItem(idx, 3, QTableWidgetItem(hora_llegada))
-            
+
             estado_item = QTableWidgetItem("Registrado")
             estado_item.setForeground(QColor(163, 190, 140))  # Verde
             self.tabla_asistencia.setItem(idx, 4, estado_item)
+        else:
+        # Detener el temporizador si todos los alumnos ya llegaron
+            self.simulacion_timer.stop()
+            
     def registrar_llegada_manual(self):
         """Permite registrar manualmente la llegada de un alumno ingresando su número de control."""
         dialog = QDialog(self)
@@ -980,15 +1342,19 @@ class Dashboard(QMainWindow):
 
     def finalizar_clase(self):
         """Finaliza la clase actual y guarda en historial"""
+        if not self.clase_activa:
+            QMessageBox.warning(self, "Error", "No hay una clase activa para finalizar.")
+            return
+
         materia = self.lista_materias.currentItem().text()
         grupo = self.combo_grupos.currentText()
 
-        # Calcular asistencia
+    # Calcular asistencia
         total = self.tabla_asistencia.rowCount()
-        presentes = sum(1 for row in range(total) 
-                    if self.tabla_asistencia.item(row, 4).text() != "No registrado")
+        presentes = sum(1 for row in range(total)
+                        if self.tabla_asistencia.item(row, 4).text() != "No registrado")
 
-        # Guardar en historial
+    # Guardar en historial
         self.historial_clases.append({
             "fecha": datetime.now().strftime("%d/%m/%Y"),
             "materia": f"{materia} - {grupo}",
@@ -1000,14 +1366,16 @@ class Dashboard(QMainWindow):
         self.clase_activa = False
         self.simulacion_timer.stop()
         self.barra_clase_container.hide()
+        self.timer.stop()
+        self.simulacion_timer.stop()
 
-        # Mostrar opciones al finalizar la clase
+    # Mostrar opciones al finalizar la clase
         dialog = QDialog(self)
         dialog.setWindowTitle("Clase Finalizada")
         dialog.setModal(True)
         dialog_layout = QVBoxLayout(dialog)
 
-        # Mensaje de resumen
+    # Mensaje de resumen
         lbl_resumen = QLabel(f"La clase de {materia} - {grupo} ha finalizado.\n"
                             f"Duración: {str(datetime.now() - datetime.combine(datetime.today(), self.hora_inicio_clase)).split('.')[0]}\n"
                             f"Asistencia: {presentes}/{total}")
@@ -1015,8 +1383,7 @@ class Dashboard(QMainWindow):
         lbl_resumen.setStyleSheet("font-size: 16px; font-weight: bold;")
         dialog_layout.addWidget(lbl_resumen)
 
-
-        # Botón para cerrar
+    # Botón para cerrar
         btn_cerrar = QPushButton("Cerrar")
         btn_cerrar.clicked.connect(dialog.close)
         dialog_layout.addWidget(btn_cerrar)
@@ -1087,40 +1454,283 @@ class Dashboard(QMainWindow):
         dialog.setLayout(layout)
         dialog.exec()
 
-    # ===================== MÉTODOS ORIGINALES (COPIADOS SIN MODIFICAR) =====================
-    # [Aquí van TODOS tus métodos originales exactamente como los tenías]
-    # show_clases_dialog, show_registro_alumnos_dialog, show_consulta_alumnos_dialog,
-    # iniciar_clase, finalizar_clase, etc. (todos los que estaban en tu código original)
-    
-    # Solo necesitamos modificar ligeramente finalizar_clase para guardar en el historial:
-    def finalizar_clase(self):
-        """Finaliza la clase actual y guarda en historial"""
-        materia = self.lista_materias.currentItem().text()
-        grupo = self.combo_grupos.currentText()
-        
-        # Calcular asistencia (ejemplo)
-        total = self.tabla_asistencia.rowCount()
-        presentes = sum(1 for row in range(total) 
-                   if self.tabla_asistencia.item(row, 4).text() != "No registrado")
-        
-        # Guardar en historial
-        self.historial_clases.append({
-            "fecha": datetime.now().strftime("%d/%m/%Y"),
-            "materia": f"{materia} - {grupo}",
-            "aula": self.aulas.get(f"{materia} - {grupo}", "Sin aula"),
-            "duracion": str(datetime.now() - datetime.combine(datetime.today(), self.hora_inicio_clase)),
-            "asistencia": f"{presentes}/{total}",
-        })
-        
-        self.clase_activa = False
-        self.simulacion_timer.stop()
-        self.barra_clase_container.hide()
-        
-        QMessageBox.information(self, "Clase Finalizada", 
-                              f"La clase de {materia} - {grupo} ha finalizado.\n"
-                              f"Duración: {datetime.now().strftime('%H:%M')}")
+    # ===================== PROGRAMAR CLASES =====================
+    def show_programar_clases_dialog(self):
+        """Muestra el formulario para programar clases."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Programar Clases")
+        dialog.setModal(True)
+        dialog.setMinimumSize(400, 500)
+        layout = QVBoxLayout(dialog)
 
-    # [El resto de tus métodos permanecen exactamente igual]
+        # Seleccionar clase
+        form = QFormLayout()
+        combo_clase = QComboBox()
+        try:
+            with open("clases.json", "r") as file:
+                clases = json.load(file)
+                for clase in clases:
+                    combo_clase.addItem(f"{clase['materia']} - {clase['grupo']}")
+        except FileNotFoundError:
+            QMessageBox.warning(self, "Error", "No hay clases creadas.")
+            dialog.close()
+            return
+        form.addRow("Clase:", combo_clase)
+
+        # Configurar periodo
+        input_fecha_inicio = QLineEdit()
+        input_fecha_inicio.setPlaceholderText("Ejemplo: 2025-01-31")
+        form.addRow("Fecha de Inicio:", input_fecha_inicio)
+
+        input_fecha_fin = QLineEdit()
+        input_fecha_fin.setPlaceholderText("Ejemplo: 2025-06-17")
+        form.addRow("Fecha de Fin:", input_fecha_fin)
+        
+        layout.addLayout(form)
+        
+    # Selección múltiple de días
+        dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+        layout.addWidget(QLabel("Selecciona los días que se imparte la clase:"))
+        checkboxes = []
+        dias_layout = QHBoxLayout()
+        for dia in dias:
+            cb = QCheckBox(dia)
+            dias_layout.addWidget(cb)
+            checkboxes.append(cb)
+        layout.addLayout(dias_layout)
+
+    # Selección de hora de inicio y fin
+        horas_layout = QHBoxLayout()
+        
+        layout.addWidget(QLabel("Selecciona la hora de inicio y fin de la clase:"))
+        label_inicio = QLabel("Inicio:")
+        time_inicio = QTimeEdit()
+        time_inicio.setTime(QTime(8, 0))
+        label_fin = QLabel("Fin:")
+        time_fin = QTimeEdit()
+        time_fin.setTime(QTime(10, 0))
+        horas_layout.addWidget(label_inicio)
+        horas_layout.addWidget(time_inicio)
+        horas_layout.addWidget(label_fin)
+        horas_layout.addWidget(time_fin)
+        layout.addLayout(horas_layout)
+
+    # Botón para guardar
+        btn_guardar = QPushButton("Guardar")
+        def guardar():
+            dias_seleccionados = [cb.text() for cb in checkboxes if cb.isChecked()]
+            hora_inicio = time_inicio.time().toString("HH:mm")
+            hora_fin = time_fin.time().toString("HH:mm")
+            self.programar_clase(
+                combo_clase.currentText(),
+                input_fecha_inicio.text(),
+                input_fecha_fin.text(),
+                dias_seleccionados,
+                hora_inicio,
+                hora_fin,
+                dialog
+            )
+            
+        
+        btn_guardar.clicked.connect(guardar)
+        layout.addWidget(btn_guardar)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+        
+        
+
+    def programar_clase(self, clase, fecha_inicio, fecha_fin, dias, hora_inicio, hora_fin, dialog):
+        if not clase or not fecha_inicio or not fecha_fin:
+            QMessageBox.warning(self, "Error", "Todos los campos son obligatorios.")
+            return
+        if not dias:
+            QMessageBox.warning(self, "Error", "Selecciona al menos un día.")
+            return
+        if hora_inicio >= hora_fin:
+            QMessageBox.warning(self, "Error", "La hora de inicio debe ser antes que la de fin.")
+            return
+
+        try:
+            with open("programaciones.json", "r") as file:
+                programaciones = json.load(file)
+        except FileNotFoundError:
+            programaciones = []
+
+        programaciones.append({
+            "clase": clase,
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
+            "dias": dias,
+            "hora_inicio": hora_inicio,
+            "hora_fin": hora_fin
+        })
+
+        with open("programaciones.json", "w") as file:
+            json.dump(programaciones, file, indent=4, ensure_ascii=False)
+
+        QMessageBox.information(self, "Éxito", "Clase programada correctamente.")
+        dialog.close()
+        self.refrescar_recordatorios()
+
+
+    def show_blur_overlay(self):
+        """Muestra un efecto de desenfoque falso en el fondo."""
+        self.blur_overlay = QWidget(self)
+        self.blur_overlay.setStyleSheet("""
+        background-color: rgba(0, 0, 0, 120);  /* Fondo negro semitransparente */
+        """)
+        self.blur_overlay.setGeometry(self.rect())
+        self.blur_overlay.show()
+        
+    def cargar_programaciones(self):
+        try:
+            with open("programaciones.json", "r", encoding="latin1") as file:
+                data = json.load(file)
+                print("Programaciones cargadas:", data)  # <-- Agrega esto
+                return data
+        except Exception as e:
+            print("Error al cargar programaciones:", e)
+            return []
+    
+
+
+    def refrescar_recordatorios(self):
+        # Limpia el layout
+        for i in reversed(range(self.reminder_layout.count())):
+            widget = self.reminder_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        # Carga las programaciones
+        clases_programadas = self.cargar_programaciones()
+        if clases_programadas:
+            for clase in clases_programadas:
+                nombre = clase.get("clase", "Sin nombre")
+                fecha_inicio = clase.get("fecha_inicio", "¿?")
+                fecha_fin = clase.get("fecha_fin", "¿?")
+                dias = ", ".join(clase.get("dias", []))
+                hora_inicio = clase.get("hora_inicio", "")
+                hora_fin = clase.get("hora_fin", "")
+                texto = (f"📚 {nombre}\n"
+                         f"🗓️ {fecha_inicio} a {fecha_fin}\n"
+                         f"🕒 {dias} {hora_inicio}-{hora_fin}")
+
+                # Widget horizontal para texto + botón
+                recordatorio_widget = QWidget()
+                recordatorio_layout = QHBoxLayout()
+                recordatorio_layout.setContentsMargins(0, 0, 0, 0)
+                recordatorio_widget.setLayout(recordatorio_layout)
+
+                lbl = QLabel(texto)
+                lbl.setStyleSheet("font-size: 14px; font-weight: normal; padding: 3px 0;")
+                btn_iniciar = QPushButton("Iniciar Clase")
+                btn_iniciar.setStyleSheet("padding: 2px 8px;")
+
+                # Conecta el botón para iniciar la clase, pasando el diccionario completo
+                btn_iniciar.clicked.connect(lambda _, c=clase: self.iniciar_clase_desde_recordatorio(c))
+
+                recordatorio_layout.addWidget(lbl)
+                recordatorio_layout.addWidget(btn_iniciar)
+
+                self.reminder_layout.addWidget(recordatorio_widget)
+        else:
+            self.reminder_layout.addWidget(QLabel("No hay clases programadas."))
+        
+    def iniciar_clase_desde_recordatorio(self, clase):
+        """Inicia una clase desde los recordatorios"""
+        materia_grupo = clase.get('clase', '')
+        if " - " in materia_grupo:
+            materia, grupo = materia_grupo.split(" - ", 1)
+        else:
+            materia = materia_grupo
+            grupo = ""
+
+    # Verificar que la materia y el grupo sean válidos
+        if not materia or not grupo:
+            QMessageBox.warning(self, "Error", "Datos de clase incompletos en el recordatorio.")
+            return
+
+    # Configurar la clase activa
+        self.clase_activa = True
+        self.hora_inicio_clase = datetime.now().time()
+
+    # Llamar al método iniciar_clase con los parámetros correctos
+        self.iniciar_clase(materia, grupo) 
+
+
+    def hide_blur_overlay(self):
+        """Oculta el efecto de desenfoque falso."""
+        if hasattr(self, 'blur_overlay'):
+            self.blur_overlay.hide()
+            self.blur_overlay.deleteLater()
+
+    def show_agregar_nota_dialog(self):
+        """Muestra un diálogo para agregar una nueva nota."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Agregar Nota")
+        dialog.setModal(True)
+        dialog.setMinimumSize(400, 300)
+        layout = QVBoxLayout(dialog)
+
+        # Campo para ingresar el título de la nota
+        input_titulo = QLineEdit()
+        input_titulo.setPlaceholderText("Título de la nota")
+        layout.addWidget(QLabel("Título:"))
+        layout.addWidget(input_titulo)
+
+        # Campo para ingresar el contenido de la nota
+        input_contenido = QLineEdit()
+        input_contenido.setPlaceholderText("Contenido de la nota")
+        layout.addWidget(QLabel("Contenido:"))
+        layout.addWidget(input_contenido)
+
+        # Botón para guardar la nota
+        btn_guardar = QPushButton("Guardar")
+        btn_guardar.setObjectName("success")
+        btn_guardar.clicked.connect(lambda: self.agregar_nota(input_titulo.text(), input_contenido.text(), dialog))
+        layout.addWidget(btn_guardar)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+        
+    def agregar_nota(self, titulo, contenido, dialog):
+        """Agrega una nueva nota a la lista de notas."""
+        if not titulo or not contenido:
+            QMessageBox.warning(self, "Error", "El título y el contenido de la nota son obligatorios.")
+            return
+
+    # Agregar la nota a la lista de notas
+        self.lista_notas.addItem(f"{titulo}: {contenido}")
+
+    # Guardar la nota en una estructura de datos (opcional)
+        if not hasattr(self, 'notas'):
+            self.notas = []
+        self.notas.append({"titulo": titulo, "contenido": contenido})
+
+        QMessageBox.information(self, "Éxito", "Nota agregada correctamente.")
+        dialog.close()
+        
+    def guardar_notas(self):
+        """Guarda las notas en un archivo JSON."""
+        try:
+            with open("notas.json", "w") as file:
+                json.dump(self.notas, file, indent=4)
+        except Exception as e:
+            print(f"Error al guardar notas: {e}")
+            
+    def cargar_notas(self):
+        """Carga las notas desde un archivo JSON."""
+        try:
+            with open("notas.json", "r") as file:
+                self.notas = json.load(file)
+                for nota in self.notas:
+                    self.lista_notas.addItem(f"{nota['titulo']}: {nota['contenido']}")
+        except FileNotFoundError:
+            self.notas = []
+        except Exception as e:
+            print(f"Error al cargar notas: {e}")
+
 
 if __name__ == "__main__":
     from PyQt6.QtWidgets import QApplication
